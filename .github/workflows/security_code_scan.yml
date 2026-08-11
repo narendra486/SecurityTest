@@ -1,4 +1,4 @@
-name: Semgrep
+name: Security Code Scan
 
 on:
   push:
