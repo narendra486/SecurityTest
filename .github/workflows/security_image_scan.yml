@@ -1,0 +1,30 @@
+name: Security Image Scan
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t local/securitytest:latest .
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: local/securitytest:latest
+          format: table
+          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
