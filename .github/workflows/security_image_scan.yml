@@ -23,6 +23,8 @@ jobs:
           docker build -t local/securitytest:latest .
 
       - name: Trivy Image Scan
+        id: trivy
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: local/securitytest:latest
@@ -31,13 +33,12 @@ jobs:
           vuln-type: os,library
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          skip-version-check: true
           format: table
           output: trivy-results.txt
           exit-code: 1
 
       - name: Create PR Summary
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         run: |
           {
             echo "## Trivy Image Vulnerability Scan"
@@ -48,9 +49,15 @@ jobs:
           } > comment.md
 
       - name: Comment on PR
-        if: github.event_name == 'pull_request'
+        if: always() && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: trivy-image-scan
           recreate: true
           path: comment.md
+
+      - name: Fail if vulnerabilities found
+        if: steps.trivy.outcome == 'failure'
+        run: |
+          echo "HIGH or CRITICAL vulnerabilities were found."
+          exit 1
