@@ -5,7 +5,7 @@ const app = express();
 
 app.use(express.json());
 
-// 1. SQL Injections
+// 1. SQL Injectionsmn 
 app.get("/users", async (req, res) => {
   const username = req.query.username;
 
