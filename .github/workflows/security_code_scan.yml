@@ -16,14 +16,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: returntocorp/semgrep-action@v1
-        with:
-          config: >-
-            p/default
-            p/javascript
-            p/typescript
-            p/python
-            p/dockerfile
-            p/ci
-            p/json
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
