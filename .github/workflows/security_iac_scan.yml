@@ -1,4 +1,4 @@
-name: IaC Scan
+name: Security IaC Scan
 
 on:
   push:
@@ -6,14 +6,32 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
 jobs:
   checkov:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Run Checkov
         uses: bridgecrewio/checkov-action@master
         with:
           directory: .
           quiet: true
           soft_fail: ${{ github.event_name != 'pull_request' }}
+          output_format: cli
+          output_file_path: console,checkov.txt
+
+      - name: Comment Checkov results
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: checkov
+          recreate: true
+          path: checkov.txt
