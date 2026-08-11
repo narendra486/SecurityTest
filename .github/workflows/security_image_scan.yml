@@ -8,23 +8,47 @@ on:
 
 permissions:
   contents: read
-  security-events: write
+  pull-requests: write
 
 jobs:
   trivy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t local/securitytest:latest .
+        run: |
+          docker build -t local/securitytest:latest .
 
-      - name: Run Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.24.0
+      - name: Run Trivy scan
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: local/securitytest:latest
+          format: template
+          template: '@/contrib/github.tpl'
+          output: trivy-results.md
+          exit-code: '0'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+
+      - name: Add Trivy summary to PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: trivy-image-scan
+          recreate: true
+          path: trivy-results.md
+
+      - name: Fail PR if vulnerabilities found
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: local/securitytest:latest
           format: table
-          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          exit-code: '1'
           ignore-unfixed: true
           vuln-type: os,library
           severity: CRITICAL,HIGH
