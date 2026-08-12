@@ -1,0 +1,202 @@
+name: Security CodeQL Scan
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          queries: security-extended
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        id: codeql
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript"
+
+      - name: Create PR Summary
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+
+          sarif_files = []
+
+          for root, dirs, files in os.walk("."):
+              for file in files:
+                  if file.endswith(".sarif"):
+                      sarif_files.append(os.path.join(root, file))
+
+          findings = []
+
+          for sarif_file in sarif_files:
+              try:
+                  with open(sarif_file) as f:
+                      data = json.load(f)
+              except Exception:
+                  continue
+
+              for run in data.get("runs", []):
+                  rules = {
+                      rule.get("id"): rule
+                      for rule in run.get("tool", {})
+                          .get("driver", {})
+                          .get("rules", [])
+                  }
+
+                  for result in run.get("results", []):
+                      level = result.get("level", "warning")
+
+                      message = result.get(
+                          "message", {}
+                      ).get(
+                          "text", "No description available"
+                      )
+
+                      rule_id = result.get("ruleId", "")
+
+                      rule = rules.get(rule_id, {})
+
+                      properties = rule.get(
+                          "properties", {}
+                      )
+
+                      security_severity = properties.get(
+                          "security-severity", ""
+                      )
+
+                      locations = result.get("locations", [])
+
+                      if locations:
+                          physical = locations[0].get(
+                              "physicalLocation", {}
+                          )
+
+                          artifact = physical.get(
+                              "artifactLocation", {}
+                          ).get("uri", "N/A")
+
+                          line = physical.get(
+                              "region", {}
+                          ).get("startLine", "N/A")
+                      else:
+                          artifact = "N/A"
+                          line = "N/A"
+
+                      findings.append({
+                          "severity": security_severity,
+                          "level": level,
+                          "message": message,
+                          "file": artifact,
+                          "line": line
+                      })
+
+          # Highest security severity first
+          def severity_value(item):
+              try:
+                  return float(item["severity"])
+              except:
+                  return 0
+
+          findings.sort(
+              key=severity_value,
+              reverse=True
+          )
+
+          total = len(findings)
+          top = findings[:5]
+
+          with open("comment.md", "w") as out:
+              out.write("## CodeQL Security Scan\n\n")
+
+              if total == 0:
+                  out.write(
+                      "No CodeQL security findings detected.\n"
+                  )
+              else:
+                  out.write(
+                      f"**{total} security findings detected.** "
+                  )
+
+                  if total > 5:
+                      out.write("Showing top 5.\n\n")
+                  else:
+                      out.write("\n\n")
+
+                  out.write(
+                      "| Severity | Finding | File | Line |\n"
+                  )
+                  out.write(
+                      "|---|---|---|---:|\n"
+                  )
+
+                  for item in top:
+                      severity = item["severity"]
+
+                      if severity:
+                          try:
+                              severity_text = f"{float(severity):g}"
+                          except:
+                              severity_text = severity
+                      else:
+                          severity_text = item["level"]
+
+                      message = (
+                          str(item["message"])
+                          .replace("|", "\\|")
+                          .replace("\n", " ")
+                      )
+
+                      file_path = (
+                          str(item["file"])
+                          .replace("|", "\\|")
+                          .replace("\n", " ")
+                      )
+
+                      if len(message) > 70:
+                          message = message[:67] + "..."
+
+                      if len(file_path) > 50:
+                          file_path = "..." + file_path[-47:]
+
+                      out.write(
+                          f"| {severity_text} | {message} | "
+                          f"`{file_path}` | {item['line']} |\n"
+                      )
+
+                  if total > 5:
+                      out.write(
+                          f"\n> Showing **5 of {total}** findings. "
+                          "See GitHub Code Scanning for the complete results.\n"
+                      )
+          PY
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: codeql-security
+          recreate: true
+          path: comment.md
