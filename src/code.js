@@ -68,7 +68,7 @@ app.get("/fetch", async (req, res) => {
   res.send(data);
 });
 
-// 9. Sensitive information in logs
+// 9. Sensitive information in log
 app.post("/login", (req, res) => {
   console.log("Login request:", req.body);
 
