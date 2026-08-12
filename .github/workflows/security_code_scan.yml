@@ -29,8 +29,7 @@ jobs:
             --config p/default \
             --severity ERROR \
             --json \
-            --output semgrep.json \
-            --error
+            --output semgrep.json
 
       - name: Create PR Comment
         if: always() && github.event_name == 'pull_request'
@@ -43,8 +42,6 @@ jobs:
 
           results = data.get("results", [])
 
-          print(f"Total ERROR findings: {len(results)}")
-
           with open("comment.md", "w") as out:
               out.write("## Semgrep Security Scan\n\n")
 
@@ -56,31 +53,59 @@ jobs:
                   )
 
                   out.write("### Top 10 Findings\n\n")
+
                   out.write(
-                      "| # | Rule | File | Line | Message |\n"
-                      "|---|------|------|------|---------|\n"
+                      "| # | Bug | Severity | File | Line | Description | Rule ID |\n"
+                      "|---|-----|----------|------|------|-------------|---------|\n"
                   )
 
                   for i, result in enumerate(results[:10], 1):
-                      rule = result.get("check_id", "N/A")
-                      message = result.get("extra", {}).get(
-                          "message", "N/A"
-                      ).replace("|", "\\|").replace("\n", " ")
+                      extra = result.get("extra", {})
+                      metadata = extra.get("metadata", {})
 
-                      path = result.get("path", "N/A")
-                      line = result.get("start", {}).get("line", "N/A")
+                      rule_id = result.get("check_id", "N/A")
+
+                      bug_name = metadata.get("name", rule_id)
+
+                      severity = extra.get("severity", "ERROR")
+
+                      description = extra.get(
+                          "message",
+                          "No description available"
+                      )
+
+                      file_path = result.get("path", "N/A")
+
+                      line = result.get(
+                          "start",
+                          {}
+                      ).get("line", "N/A")
+
+                      # Keep Markdown table valid
+                      bug_name = (
+                          str(bug_name)
+                          .replace("|", "\\|")
+                          .replace("\n", " ")
+                      )
+
+                      description = (
+                          str(description)
+                          .replace("|", "\\|")
+                          .replace("\n", " ")
+                      )
 
                       out.write(
-                          f"| {i} | `{rule}` | `{path}` | "
-                          f"{line} | {message} |\n"
+                          f"| {i} | **{bug_name}** | **{severity}** | "
+                          f"`{file_path}` | {line} | {description} | "
+                          f"`{rule_id}` |\n"
                       )
 
                   if len(results) > 10:
                       out.write(
-                          f"\n> Showing the top 10 of "
-                          f"{len(results)} findings. "
-                          "See GitHub Code Scanning for the complete results.\n"
+                          f"\n> Showing the top 10 of {len(results)} findings. "
+                          "See the GitHub Code Scanning results for the complete list.\n"
                       )
+
           PY
 
       - name: Comment on PR
@@ -91,12 +116,20 @@ jobs:
           recreate: true
           path: comment.md
 
+      - name: Generate SARIF
+        if: always()
+        run: |
+          semgrep scan \
+            --config p/default \
+            --severity ERROR \
+            --sarif \
+            --output semgrep.sarif
+
       - name: Upload Semgrep SARIF
         if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
-        continue-on-error: true
 
       - name: Block PR on ERROR findings
         if: steps.semgrep.outcome == 'failure'
