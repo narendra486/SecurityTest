@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  security-events: write
 
 jobs:
   trivy:
@@ -22,33 +23,42 @@ jobs:
         run: |
           docker build -t local/securitytest:latest .
 
-      - name: Run Trivy scan
+      - name: Trivy Image Scan
+        id: trivy
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: local/securitytest:latest
-          format: template
-          template: '@/contrib/github.tpl'
-          output: trivy-results.md
-          exit-code: '0'
-          ignore-unfixed: true
+          trivy-version: v0.73.0
+          scanners: vuln
           vuln-type: os,library
-          severity: CRITICAL,HIGH
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          output: trivy-results.txt
+          exit-code: 1
 
-      - name: Add Trivy summary to PR
-        if: github.event_name == 'pull_request'
+      - name: Create PR Summary
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          {
+            echo "## Trivy Image Vulnerability Scan"
+            echo
+            echo '```text'
+            cat trivy-results.txt
+            echo '```'
+          } > comment.md
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: trivy-image-scan
           recreate: true
-          path: trivy-results.md
+          path: comment.md
 
-      - name: Fail PR if vulnerabilities found
-        if: github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: local/securitytest:latest
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          vuln-type: os,library
-          severity: CRITICAL,HIGH
+      - name: Fail if vulnerabilities found
+        if: steps.trivy.outcome == 'failure'
+        run: |
+          echo "HIGH or CRITICAL vulnerabilities were found."
+          exit 1
