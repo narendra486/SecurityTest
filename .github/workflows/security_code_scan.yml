@@ -31,7 +31,7 @@ jobs:
             --json \
             --output semgrep.json
 
-      - name: Create PR Comment
+      - name: Create PR Summary
         if: always() && github.event_name == 'pull_request'
         run: |
           python3 - <<'PY'
@@ -46,64 +46,88 @@ jobs:
               out.write("## Semgrep Security Scan\n\n")
 
               if not results:
-                  out.write("✅ **No ERROR-level security findings detected.**\n")
+                  out.write(
+                      "No **ERROR-level** security findings detected.\n"
+                  )
               else:
+                  total = len(results)
+
+                  if total > 5:
+                      out.write(
+                          f"**{total} ERROR-level findings detected. "
+                          "Showing top 5.**\n\n"
+                      )
+                  else:
+                      out.write(
+                          f"**{total} ERROR-level findings detected.**\n\n"
+                      )
+
                   out.write(
-                      f"❌ **{len(results)} ERROR-level findings detected.**\n\n"
+                      "| Severity | Finding | File | Line |\n"
+                  )
+                  out.write(
+                      "|---|---|---|---:|\n"
                   )
 
-                  out.write("### Top 10 Findings\n\n")
-
-                  out.write(
-                      "| # | Bug | Severity | File | Line | Description | Rule ID |\n"
-                      "|---|-----|----------|------|------|-------------|---------|\n"
-                  )
-
-                  for i, result in enumerate(results[:10], 1):
+                  for result in results[:5]:
                       extra = result.get("extra", {})
                       metadata = extra.get("metadata", {})
 
-                      rule_id = result.get("check_id", "N/A")
-
-                      bug_name = metadata.get("name", rule_id)
-
-                      severity = extra.get("severity", "ERROR")
-
-                      description = extra.get(
-                          "message",
-                          "No description available"
+                      severity = extra.get(
+                          "severity",
+                          "ERROR"
                       )
 
-                      file_path = result.get("path", "N/A")
+                      finding = metadata.get(
+                          "name",
+                          extra.get(
+                              "message",
+                              "No description available"
+                          )
+                      )
+
+                      file_path = result.get(
+                          "path",
+                          "N/A"
+                      )
 
                       line = result.get(
                           "start",
                           {}
-                      ).get("line", "N/A")
+                      ).get(
+                          "line",
+                          "N/A"
+                      )
 
                       # Keep Markdown table valid
-                      bug_name = (
-                          str(bug_name)
+                      finding = (
+                          str(finding)
                           .replace("|", "\\|")
                           .replace("\n", " ")
                       )
 
-                      description = (
-                          str(description)
+                      file_path = (
+                          str(file_path)
                           .replace("|", "\\|")
                           .replace("\n", " ")
                       )
 
+                      # Keep table compact
+                      if len(finding) > 70:
+                          finding = finding[:67] + "..."
+
+                      if len(file_path) > 50:
+                          file_path = "..." + file_path[-47:]
+
                       out.write(
-                          f"| {i} | **{bug_name}** | **{severity}** | "
-                          f"`{file_path}` | {line} | {description} | "
-                          f"`{rule_id}` |\n"
+                          f"| {severity} | {finding} | "
+                          f"`{file_path}` | {line} |\n"
                       )
 
-                  if len(results) > 10:
+                  if total > 5:
                       out.write(
-                          f"\n> Showing the top 10 of {len(results)} findings. "
-                          "See the GitHub Code Scanning results for the complete list.\n"
+                          f"\n> Showing **5 of {total}** findings. "
+                          "See GitHub Code Scanning for the complete results.\n"
                       )
 
           PY
