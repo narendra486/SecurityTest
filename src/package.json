@@ -1,7 +1,7 @@
 {
   "name": "vulnerable-node-test",
   "version": "1.0.0",
-  "description": "Intentionally vulnerable Node.js project for security scanner testing  ",
+  "description": "Intentionally vulnerable Node.js project for security scanner testing ",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
