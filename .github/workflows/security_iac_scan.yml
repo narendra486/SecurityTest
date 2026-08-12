@@ -17,26 +17,95 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run Trivy
+      - name: Run Trivy IaC Scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
           severity: HIGH,CRITICAL
-          format: table
-          output: trivy-summary.txt
+          format: json
+          output: trivy-results.json
           exit-code: '0'
 
       - name: Create PR Summary
         if: github.event_name == 'pull_request'
+        shell: bash
         run: |
-          {
-            echo "## Trivy IaC Scan"
-            echo
-            echo '```text'
-            cat trivy-summary.txt
-            echo '```'
-          } > comment.md
+          python3 <<'PY'
+          import json
+
+          with open("trivy-results.json") as f:
+              data = json.load(f)
+
+          findings = []
+
+          for result in data.get("Results", []):
+              target = result.get("Target", "")
+
+              for misconfig in result.get("Misconfigurations", []):
+                  severity = misconfig.get("Severity", "")
+
+                  if severity not in ("HIGH", "CRITICAL"):
+                      continue
+
+                  findings.append({
+                      "severity": severity,
+                      "id": misconfig.get("ID", ""),
+                      "title": misconfig.get("Title", ""),
+                      "target": target
+                  })
+
+          # Sort Critical first, then High
+          severity_order = {
+              "CRITICAL": 0,
+              "HIGH": 1
+          }
+
+          findings.sort(key=lambda x: severity_order.get(x["severity"], 99))
+
+          total = len(findings)
+          top = findings[:5]
+
+          with open("comment.md", "w") as f:
+              f.write("## Trivy IaC Scan\n\n")
+
+              if total == 0:
+                  f.write("No HIGH or CRITICAL IaC vulnerabilities found.\n")
+              else:
+                  f.write(f"**{total} HIGH/CRITICAL findings detected.** ")
+                  
+                  if total > 5:
+                      f.write("Showing top 5.\n\n")
+                  else:
+                      f.write("\n\n")
+
+                  f.write("| Severity | ID | Finding | Target |\n")
+                  f.write("|---|---|---|---|\n")
+
+                  for item in top:
+                      severity = item["severity"]
+                      vuln_id = item["id"]
+                      title = item["title"].replace("|", "\\|")
+                      target = item["target"].replace("|", "\\|")
+
+                      # Keep table compact
+                      if len(title) > 70:
+                          title = title[:67] + "..."
+
+                      if len(target) > 50:
+                          target = "..." + target[-47:]
+
+                      f.write(
+                          f"| {severity} | {vuln_id} | "
+                          f"{title} | {target} |\n"
+                      )
+
+                  if total > 5:
+                      f.write(
+                          f"\n> Showing **5 of {total}** findings. "
+                          "See the workflow logs for the complete scan results.\n"
+                      )
+          PY
 
       - name: Comment on PR
         if: github.event_name == 'pull_request'
