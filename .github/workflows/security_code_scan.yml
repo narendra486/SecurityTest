@@ -1,20 +1,25 @@
-name: Semgrep
+name: Security Code Scan - Semgrep
 
 on:
   push:
-    branches: [main, master]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: write
   security-events: write
 
 jobs:
   semgrep:
+    name: Semgrep
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: semgrep/semgrep-action@v1
-        env:
-          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/default
